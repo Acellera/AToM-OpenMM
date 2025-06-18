@@ -8,6 +8,7 @@ from atom_openmm.ommsystem import OMMSystemRBFE
 from atom_openmm.acellera.ommworker import OMMWorkerATM
 from atom_openmm.utils.singal_guard import TerminationGuard
 from atom_openmm.utils.timer import Timer
+from atom_openmm.utils.config import parse_config
 import sys
 
 logger = logging.getLogger("sync_re")
@@ -42,21 +43,11 @@ OMMSystemRBFE.set_integrator = set_integrator
 class OpenmmJobRBFE:
 
     def __init__(self, config_file):
-        import yaml
-        import json
-
         self.logger = logger
 
-        self.logger.info("Configuration:")
-        if config_file.endswith(".yaml"):
-            with open(config_file, "r") as f:
-                self.config = yaml.safe_load(f)
-        elif config_file.endswith(".json"):
-            with open(config_file, "r") as f:
-                self.config = json.load(f)
-        else:
-            raise ValueError("Invalid configuration file format")
+        self.config = parse_config(config_file)
 
+        self.logger.info("Configuration:")
         for key, value in self.config.items():
             self.logger.info(f"{key}: {value}")
 
