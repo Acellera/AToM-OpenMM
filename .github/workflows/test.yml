@@ -13,7 +13,7 @@ jobs:
       fail-fast: false
       matrix:
         os: ["ubuntu-latest"] #, "macos-latest", "macos-13", "windows-2019"]
-        python-version: ["3.10"] #, "3.9", "3.11", "3.12"]
+        python-version: ["3.11"] #, "3.9", "3.11", "3.12"]
 
     defaults: # Needed for conda
       run:
@@ -38,9 +38,8 @@ jobs:
           # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
-      - name: Install conda deps
+      - name: Install pip deps
         run: |
-          conda install -y -q python=${{ matrix.python-version }}
           pip install pyyaml numpy pandas openmm-unofficial-cpu
           pip install git+https://github.com/openforcefield/openff-toolkit
           pip install git+https://github.com/openmm/openmmforcefields
