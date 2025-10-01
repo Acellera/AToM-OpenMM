@@ -299,7 +299,6 @@ class OMMSystem(object):
             self.drude_hardwall = 0.02 if self.keywords.get('DRUDE_HARDWALL') is None else float(self.keywords.get('DRUDE_HARDWALL'))
             self.integrator = DrudeLangevinIntegrator(temperature, frictionCoeff, self.drude_temperature, self.drude_frictionCoeff, MDstepsize)
             self.integrator.setMaxDrudeDistance(self.drude_hardwall) # Drude Hardwall
-            self.integrator.setDrudeForce(drudeForce)
         else:
             self._exit(f"Invalid integrator: {integrator}")
         
@@ -762,7 +761,7 @@ class OMMSystemRBFE(OMMSystem):
             lig2_common_atoms = [int(i) for i in self.keywords.get('LIGAND2_COMMON_ATOMS')  ]
 
         if not len(lig1_common_atoms) == len(lig2_common_atoms):
-            msg = "Error: the number of commong atoms of lig1 (%d) and lig2 (%d) differ" % (len(lig1_common_atoms),len(lig2_common_atoms))
+            msg = "Error: the number of common atoms of lig1 (%d) and lig2 (%d) differ" % (len(lig1_common_atoms),len(lig2_common_atoms))
             self._exit(msg)
 
         try:

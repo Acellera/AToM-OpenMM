@@ -43,8 +43,9 @@ class openmm_job(JobManager):
         except:
             pass
             
-        # update replica objects of waiting replicas
-        self.update_replica_states()
+        # update replica objects of waiting replicas with the current state assignments
+        for repl in range(self.nreplicas):
+            self.update_state_of_replica(repl)
         for replica in self.openmm_replicas:
             replica.save_checkpoint()
 
@@ -74,11 +75,6 @@ class openmm_job(JobManager):
 
         status = self.transport.launchJob(replica, job_info)
         return status
-
-    #sync replicas with the current state assignments
-    def update_replica_states(self):
-        for repl in range(self.nreplicas):
-            self.update_state_of_replica(repl)
 
     def update_state_of_replica(self, repl):
         replica = self.openmm_replicas[repl]
@@ -411,9 +407,15 @@ class openmm_job_RBFE(openmm_job_ATM):
     def __init__(self, command_file, options):
         super().__init__(command_file, options)
 
-        self.async_mode = self.keywords.get('ASYNC_MODE', True)
-        ommworkercls = OMMWorkerATM if self.async_mode else OMMWorkerATMSync
-        
+        self.re_mode = self.keywords.get('RE_MODE', 'async')
+        ommworkercls = None
+        if self.re_mode == 'async':
+            ommworkercls = OMMWorkerATM
+        elif self.re_mode == 'sync':
+            ommworkercls = OMMWorkerATMSync
+        else:
+            self._exit('Unknown RE_MODE %s', self.re_mode)
+
         pdbtopfile = self.basename + ".pdb"
         systemfile = self.basename + "_sys.xml"
 

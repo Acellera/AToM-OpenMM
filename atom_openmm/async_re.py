@@ -56,10 +56,10 @@ class JobManager(object):
         #set to False to run without exchanges
         self.exchange = True
 
-        # Set the async mode to True by default
-        self.async_mode = self.keywords.get('ASYNC_MODE', True)
+        # replica exchange mode ('sync' or 'async') set the async mode by default
+        self.re_mode = self.keywords.get('RE_MODE', 'async')
 
-        if self.async_mode:
+        if self.re_mode == 'async':
             #catch ctrl-C and SIGTERM to terminate threads gracefully
             signal.signal(signal.SIGINT, self._signal_handler)
             signal.signal(signal.SIGTERM, self._signal_handler)
@@ -70,7 +70,7 @@ class JobManager(object):
         self._cleanup()
         self.logger.info(message)
         sys.stdout.flush()
-        if not self.async_mode:
+        if self.re_mode != 'async':
             sys.exit(1)
 
         self.logger.info('Waiting for children to complete ...')
@@ -275,26 +275,27 @@ class JobManager(object):
         enough_samples = False
         max_samples = None
 
-        def current_samples():
+        def get_current_samples():
             return [(replica.get_cycle()-1)//cycle_to_sample for replica in self.openmm_replicas]
 
         if self.keywords.get('MAX_SAMPLES')  is not None:
             max_samples_str = self.keywords.get('MAX_SAMPLES')
             max_samples = int(max_samples_str)
             starting_samples = 0
+            current_samples = get_current_samples()
 
             if isinstance(max_samples_str, str) and max_samples_str.startswith("+"):
                 # Handle cases where we want to increase the number of samples from a starting checkpoint
                 if not os.path.isfile("starting_sample"):
                     with open("starting_sample", "w") as f:
-                        f.write(f"{min(current_samples())}\n")
+                        f.write(f"{min(current_samples)}\n")
                 with open("starting_sample", "r") as f:
                     starting_samples = int(f.read().strip())
                     max_samples += starting_samples
 
-            self.logger.info(f"Target number of samples: {max_samples}. Current samples: {min(current_samples())}")
+            self.logger.info(f"Target number of samples: {max_samples}. Current samples: {min(current_samples)}")
 
-            enough_samples = all( [ repl_sample >= max_samples for repl_sample in current_samples() ] )
+            enough_samples = all( [ repl_sample >= max_samples for repl_sample in current_samples ] )
             if enough_samples:
                 self.logger.info("All replicas collected the requested number of samples (%d)" % max_samples)
 
@@ -305,9 +306,10 @@ class JobManager(object):
         while ( time.time() < end_time and
                 self.transport.numNodesAlive() > 0 and
                 not enough_samples ) :
+            current_samples = get_current_samples()
             if max_samples is not None:
                 with open("progress", "w") as f:
-                    f.write(f"{(min(current_samples())-starting_samples) / (max_samples - starting_samples)}\n")
+                    f.write(f"{(min(current_samples)-starting_samples) / (max_samples - starting_samples)}\n")
             current_time = time.time()
 
             self.updateStatus()
@@ -326,7 +328,16 @@ class JobManager(object):
             self.print_status()
             self.transport.fixnodes()
 
-            if current_time - last_checkpoint_time > checkpoint_time or (checkpoint_frequency != 0 and all([(sample % checkpoint_frequency) == 0 for sample in current_samples()] )):
+            new_samples = get_current_samples()
+            if checkpoint_frequency != 0:
+                for i in range(self.nreplicas):
+                    if new_samples[i] != current_samples[i] and new_samples[i] % checkpoint_frequency == 0:
+                        self.logger.info(f"Checkpointing replica {i} with {new_samples[i]} samples...")
+                        self.update_state_of_replica(i)
+                        self.openmm_replicas[i].save_checkpoint()
+                        self.logger.info("done.")
+
+            if current_time - last_checkpoint_time > checkpoint_time:
                 self.logger.info("Checkpointing ...")
                 self.checkpointJob()
                 last_checkpoint_time = current_time
@@ -453,28 +464,18 @@ class JobManager(object):
         """
         Scans the replicas in wait state and randomly launches them
         """
-        if self.async_mode:
-            jobs_to_launch = self._njobs_to_run()
-            if jobs_to_launch > 0:
-                #prioritize replicas that are most behind
-                wait = sorted(self.replicas_waiting, key=self._cycle_of_replica)
-                #  random.shuffle(wait)
-                n = min(jobs_to_launch,len(wait))
-                for k in wait[0:n]:
-                    self.logger.info('Launching replica %d cycle %d', k, self.status[k]['cycle_current'])
-                    # the _launchReplica function is implemented by
-                    # MD engine modules
-                    status = self._launchReplica(k,self.status[k]['cycle_current'])
-                    if status != None:
-                        self.status[k]['running_status'] = 'R'
-        else:
-            # In sync mode launch all replicas at once and they will be executed sequentially
-            for k in range(self.nreplicas):
+        jobs_to_launch = self._njobs_to_run()
+        if jobs_to_launch > 0:
+            #prioritize replicas that are most behind
+            wait = sorted(self.replicas_waiting, key=self._cycle_of_replica)
+            #  random.shuffle(wait)
+            n = min(jobs_to_launch,len(wait))
+            for k in wait[0:n]:
                 self.logger.info('Launching replica %d cycle %d', k, self.status[k]['cycle_current'])
                 # the _launchReplica function is implemented by
                 # MD engine modules
                 status = self._launchReplica(k,self.status[k]['cycle_current'])
-                if status is not None:
+                if status != None:
                     self.status[k]['running_status'] = 'R'
 
     def doExchanges(self):
